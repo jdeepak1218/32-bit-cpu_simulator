@@ -2,6 +2,7 @@
 #define CPU_32H
 #include "interface.h"
 #include<stdint.h>
+#include "opcodes32.h"
 #include<stdbool.h>
 #define NUM_REGISTERS 16
 #define FLAG_ZERO (1 << 0)
@@ -21,6 +22,7 @@ typedef struct CPU32{
   uint8_t interrupt_number;
   uint32_t interrupt_vector[256];
 } CPU32;
+uint32_t alu32_execute(CPU32 *cpu, Opcode32 op, uint32_t a, uint32_t b);
 void cpu32_init(CPU32 *cpu,struct MMU *mmu);
 void cpu32_run(CPU32 *cpu);
 void cpu32_step(CPU32 *cpu);
