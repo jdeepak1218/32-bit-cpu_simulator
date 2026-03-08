@@ -1,0 +1,9 @@
+*.exe
+*.o
+*.out
+*.a
+cpu32
+a.out
+.vscode/
+.zed/
+*.log
