@@ -4,7 +4,7 @@
 #include<stdint.h>
 void update_flags32(CPU32 *cpu,uint32_t result,uint32_t a,uint32_t b,Opcode32 op)
 {
-  cpu->flags = 0;
+  cpu->flags &= FLAG_INTERRUPT;
   if(result == 0)(cpu->flags |= FLAG_ZERO);
   if(result & 0x80000000)(cpu->flags |= FLAG_NEGATIVE);
   int a_neg = (a & 0x80000000);

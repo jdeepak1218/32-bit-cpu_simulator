@@ -5,7 +5,7 @@
 void cpu32_init(CPU32 *cpu,struct MMU *mmu){
   memset(cpu->registers,0,sizeof(cpu->registers));
   cpu->pc = 0x00000000;
-  cpu->sp = 0xFFFFFFF0;
+  cpu->sp = 0x003FFFF0;
   cpu->flags = 0;
   cpu->halted = false;
   cpu->cycles = 0;

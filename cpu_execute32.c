@@ -6,17 +6,18 @@
 void cpu32_step(CPU32 *cpu)
 {
   if(cpu->halted)return;
-  if(cpu->interrupt_pending)
-  {
-    cpu->sp-=4;
-    mem_write32(cpu,cpu->sp,cpu->pc);
-    cpu->sp-=4;
-    mem_write32(cpu,cpu->sp,cpu->flags);
-    cpu->flags &= ~FLAG_INTERRUPT;
-    cpu->pc = cpu->interrupt_vector[cpu->interrupt_number];
-    cpu->interrupt_pending = false;
-    return;
-  }
+  // if(cpu->interrupt_pending)
+  // {
+  //   printf("DEBUG: interrupt %d, pc=0x%X\n",cpu->interrupt_number, cpu->pc);
+  //   cpu->sp-=4;
+  //   mem_write32(cpu,cpu->sp,cpu->pc);
+  //   cpu->sp-=4;
+  //   mem_write32(cpu,cpu->sp,cpu->flags);
+  //   cpu->flags &= ~FLAG_INTERRUPT;
+  //   cpu->pc = cpu->interrupt_vector[cpu->interrupt_number];
+  //   cpu->interrupt_pending = false;
+  //   return;
+  // }
   uint32_t instr = mem_read32(cpu,cpu->pc);
   Opcode32 op = DECODE_OPCODE32(instr);
   uint8_t dst = DECODE_DST32(instr);
@@ -163,6 +164,17 @@ void cpu32_step(CPU32 *cpu)
     cpu->halted = true;
     break;
   }
+  if(cpu->interrupt_pending && !cpu->halted) {
+          cpu->sp -= 4;
+          mem_write32(cpu, cpu->sp, cpu->pc + 4);
+          cpu->sp -= 4;
+          mem_write32(cpu, cpu->sp, cpu->flags & ~FLAG_INTERRUPT);
+          cpu->flags &= ~FLAG_INTERRUPT;
+          cpu->pc = cpu->interrupt_vector[cpu->interrupt_number];
+          cpu->interrupt_pending = false;
+          cpu->cycles++;
+          return;
+      }
   cpu->pc += 4;
   cpu->cycles++;
 }
