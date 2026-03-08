@@ -26,4 +26,8 @@ void cpu32_run(CPU32 *cpu);
 void cpu32_step(CPU32 *cpu);
 void cpu32_raise_interrupt(CPU32 *cpu, uint8_t num);
 void cpu32_page_fault(CPU32 *cpu, uint32_t vaddr);
+uint32_t mem_read32(CPU32 *cpu,uint32_t address);
+void mem_write32(CPU32 *cpu,uint32_t address,uint32_t value);
+uint8_t mem_read8(CPU32 *cpu,uint32_t address);
+void mem_write8(CPU32 * cpu,uint32_t address,uint8_t value);
 #endif
