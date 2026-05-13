@@ -44,14 +44,16 @@ function RegisterCard({ index, value, isHighlighted, isSpecial, label }: Registe
           : 'rgba(75, 85, 99, 0.5)',
         backgroundColor: isHighlighted
           ? isSpecial
-            ? 'rgba(251, 191, 36, 0.2)'
+            ? 'rgba(251, 191, 36, 0.25)'
             : 'rgba(16, 185, 129, 0.2)'
           : 'rgba(31, 41, 55, 0.8)',
       }}
       transition={{ duration: 0.2 }}
-      className={`relative p-3 rounded-lg border ${
-        isSpecial ? 'border-amber-500/50' : 'border-gray-700'
-      } transition-shadow ${isHighlighted ? 'shadow-lg shadow-green-500/20' : ''}`}
+      className={`relative p-3 rounded-lg border transition-all duration-200 card-hover ${
+        isSpecial
+          ? 'border-amber-500/50 bg-gradient-to-br from-amber-900/20 to-amber-800/5'
+          : 'border-gray-700 bg-gradient-to-br from-gray-800/80 to-gray-800/40'
+      } ${isHighlighted ? 'shadow-xl shadow-green-500/25 ring-1 ring-green-400/40' : 'shadow-sm'}`}
     >
       {/* Register Name */}
       <div className="flex items-center justify-between mb-2">
@@ -75,7 +77,7 @@ function RegisterCard({ index, value, isHighlighted, isSpecial, label }: Registe
           key={value}
           initial={isAnimating ? { opacity: 0.5, y: -5 } : false}
           animate={{ opacity: 1, y: 0 }}
-          className="text-sm font-mono text-green-400"
+          className={`text-sm font-mono ${isAnimating ? 'text-green-300 code-glow' : 'text-green-400 code-glow'}`}
         >
           0x{value.toString(16).padStart(8, '0').toUpperCase()}
         </motion.div>

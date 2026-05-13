@@ -75,7 +75,11 @@ interface CPUStore {
   startTime: number | null;
   instructionCount: number;
 
+  // Page fault notification
+  pageFaultNotification: { vaddr: number; cycle: bigint; description: string } | null;
+
   // Actions
+  clearPageFaultNotification: () => void;
   setSourceCode: (code: string) => void;
   assembleCode: () => void;
   loadExample: (name: keyof typeof EXAMPLE_PROGRAMS) => void;
@@ -110,6 +114,9 @@ interface CPUStore {
   // Event handling
   handleExecutionEvent: (event: ExecutionEvent) => void;
 }
+
+// Module-level run loop cancellation (avoids mutating store object)
+let cancelRunLoop: (() => void) | null = null;
 
 export const useCPUStore = create<CPUStore>()(
   immer((set, get) => {
@@ -191,6 +198,9 @@ export const useCPUStore = create<CPUStore>()(
       startTime: null,
       instructionCount: 0,
 
+      // Page fault notification
+      pageFaultNotification: null as { vaddr: number; cycle: bigint; description: string } | null,
+
       // Actions
       setSourceCode: (code) => {
         set((state) => {
@@ -226,6 +236,9 @@ export const useCPUStore = create<CPUStore>()(
 
       // Execution control
       run: () => {
+        let rafId: number | null = null;
+        let timerId: ReturnType<typeof setTimeout> | null = null;
+
         set((state) => {
           state.isRunning = true;
           state.isPaused = false;
@@ -234,41 +247,62 @@ export const useCPUStore = create<CPUStore>()(
           }
         });
 
-        const { executionSpeed, breakpoints } = get();
-        const intervalMs = 1000 / executionSpeed;
+        const { breakpoints } = get();
+        let isCancelled = false;
+
+        // Register module-level cleanup
+        cancelRunLoop = () => {
+          isCancelled = true;
+          if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+          if (timerId !== null) { clearTimeout(timerId); timerId = null; }
+          cancelRunLoop = null;
+        };
 
         const runLoop = () => {
-          const { isRunning, isPaused, cpu, currentLine } = get();
+          const { isRunning, isPaused, cpu } = get();
 
-          if (!isRunning || isPaused) return;
+          if (!isRunning || isPaused || isCancelled) return;
 
           // Check for breakpoint
           const pc = cpu.getState().pc;
           if (breakpoints.has(pc)) {
-            set((state) => {
-              state.isPaused = true;
-            });
+            set((state) => { state.isPaused = true; });
             return;
           }
 
-          // Execute step
-          const result = get().step();
+          // Batch execution: run multiple steps per tick at high speeds
+          const speed = get().executionSpeed;
+          const batchSize = speed > 10000 ? 100 : speed > 1000 ? 50 : speed > 100 ? 20 : 1;
 
-          if (!result.completed || result.pageFault) {
-            set((state) => {
-              state.isRunning = false;
-            });
-            return;
+          for (let i = 0; i < batchSize; i++) {
+            const result = get().step();
+            if (!result.completed || result.pageFault) {
+              set((state) => { state.isRunning = false; });
+              return;
+            }
+            // Check breakpoints mid-batch
+            if (get().breakpoints.has(cpu.getState().pc)) {
+              set((state) => { state.isPaused = true; });
+              return;
+            }
           }
 
-          // Schedule next step
-          setTimeout(runLoop, intervalMs);
+          // At high speed, use requestAnimationFrame to batch with browser paint
+          // At low speed, use setTimeout for controllable timing
+          if (typeof requestAnimationFrame !== 'undefined' && speed > 1000) {
+            rafId = requestAnimationFrame(runLoop);
+          } else {
+            const delay = Math.max(1, 1000 / speed);
+            timerId = setTimeout(runLoop, delay);
+          }
         };
 
         runLoop();
       },
 
       pause: () => {
+        // Cancel any pending run loop
+        cancelRunLoop?.();
         set((state) => {
           state.isPaused = true;
           state.isRunning = false;
@@ -278,22 +312,13 @@ export const useCPUStore = create<CPUStore>()(
       step: () => {
         const { cpu } = get();
         const cpuState = cpu.getState();
-        const mmuState = cpu.getMMU().getState();
-
-        // Capture state before execution
-        const registersBefore = new Uint32Array(cpuState.registers);
-        const flagsBefore = cpuState.flags;
-        const spBefore = cpuState.sp;
         const pcBefore = cpuState.pc;
 
-        // Execute
+        // Execute step (CPU internally captures events via callback)
         const { instruction, completed, pageFault } = cpu.step();
 
-        // Capture state after execution
+        // Capture post-execution state
         const cpuStateAfter = cpu.getState();
-        const registersAfter = new Uint32Array(cpuStateAfter.registers);
-        const flagsAfter = cpuStateAfter.flags;
-        const spAfter = cpuStateAfter.sp;
 
         // Update current line
         const { assemblyLines } = get();
@@ -311,17 +336,19 @@ export const useCPUStore = create<CPUStore>()(
 
           if (instruction) {
             const disasm = disassemble(instruction.raw);
+            // Only create log entries if we're not in high-speed batch mode
+            // or if it's a notable event (memory access, page fault, etc.)
             const logEntry: ExecutionLogEntry = {
               cycle: cpuState.cycles,
               pc: pcBefore,
               instruction: disasm,
               machineCode: `0x${instruction.raw.toString(16).padStart(8, '0').toUpperCase()}`,
-              registersBefore,
-              registersAfter,
-              flagsBefore,
-              flagsAfter,
-              spBefore,
-              spAfter,
+              registersBefore: new Uint32Array(cpuState.registers),
+              registersAfter: new Uint32Array(cpuStateAfter.registers),
+              flagsBefore: cpuState.flags,
+              flagsAfter: cpuStateAfter.flags,
+              spBefore: cpuState.sp,
+              spAfter: cpuStateAfter.sp,
             };
 
             state.executionLog.push(logEntry);
@@ -337,6 +364,9 @@ export const useCPUStore = create<CPUStore>()(
       },
 
       reset: () => {
+        // Cancel any pending run loop
+        cancelRunLoop?.();
+
         const { cpu, mmu } = get();
 
         cpu.reset();
@@ -355,12 +385,12 @@ export const useCPUStore = create<CPUStore>()(
           state.currentLine = -1;
           state.executionLog = [];
           state.instructionCount = 0;
-          state.startTime = null;
-          state.highlightedRegister = null;
-          state.highlightedMemoryVAddr = null;
-          state.highlightedMemoryPAddr = null;
-          state.highlightedTLBEntry = null;
-          state.currentPageWalkSteps = null;
+          state.startTime = null;      state.highlightedRegister = null;
+              state.highlightedMemoryVAddr = null;
+              state.highlightedMemoryPAddr = null;
+              state.highlightedTLBEntry = null;
+              state.currentPageWalkSteps = null;
+              state.pageFaultNotification = null;
         });
       },
 
@@ -383,6 +413,12 @@ export const useCPUStore = create<CPUStore>()(
       clearExecutionLog: () => {
         set((state) => {
           state.executionLog = [];
+        });
+      },
+
+      clearPageFaultNotification: () => {
+        set((state) => {
+          state.pageFaultNotification = null;
         });
       },
 
@@ -504,6 +540,21 @@ export const useCPUStore = create<CPUStore>()(
               break;
             case 'pageWalk':
               state.currentPageWalkSteps = event.details.steps as PageWalkStep[] || null;
+              break;
+            case 'pageFault':
+              state.showPageWalk = true;
+              state.pageFaultNotification = {
+                vaddr: event.details.vaddr as number,
+                cycle: event.cycle,
+                description: (event.details.reason as string) || `Page fault at virtual address 0x${(event.details.vaddr as number).toString(16).toUpperCase()}`,
+              };
+              // Auto-clear after 5 seconds
+              setTimeout(() => {
+                const { pageFaultNotification } = get();
+                if (pageFaultNotification && pageFaultNotification.cycle === event.cycle) {
+                  set((s) => { s.pageFaultNotification = null; });
+                }
+              }, 5000);
               break;
             case 'instructionFetch':
               // Already handled in step()

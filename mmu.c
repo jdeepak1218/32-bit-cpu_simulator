@@ -70,6 +70,7 @@ uint32_t mmu_alloc_frame(MMU *mmu) {
         if (!(mmu->frame_bitmap[byte] & (1u << bit))) {
             mmu->frame_bitmap[byte] |= (1u << bit);
             uint32_t paddr = i * PAGE_SIZE;
+            /* allocate frame and zero it */
             memset(mmu->phys_mem + paddr, 0, PAGE_SIZE);
             return paddr;
         }

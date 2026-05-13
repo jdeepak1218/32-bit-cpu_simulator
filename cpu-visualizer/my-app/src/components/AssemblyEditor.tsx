@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import { useCPUStore } from '@/lib/store';
 import { EXAMPLE_PROGRAMS } from '@/lib/assembler';
-import { Play, Pause, RotateCcw, StepForward, Download, Upload, BookOpen } from 'lucide-react';
+import { Play, Pause, RotateCcw, StepForward, Download, Upload, BookOpen, Code, FileDown } from 'lucide-react';
 
 const customLanguage = {
   id: 'cpu32-asm',
@@ -280,9 +280,50 @@ export default function AssemblyEditor() {
             onClick={handleAssemble}
             className="flex items-center gap-1 px-3 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors"
           >
-            <Download size={16} />
+            <Code size={16} />
             Assemble
           </button>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                // Download assembly source code as .asm file
+                const blob = new Blob([sourceCode], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'program.asm';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs transition-colors"
+              title="Download assembly source (.asm)"
+            >
+              <FileDown size={14} />
+              ASM
+            </button>
+            <button
+              onClick={() => {
+                // Download machine code as binary .bin file
+                const { machineCode } = useCPUStore.getState();
+                const buffer = new ArrayBuffer(machineCode.length * 4);
+                const view = new DataView(buffer);
+                machineCode.forEach((word, i) => view.setUint32(i * 4, word, true));
+                const blob = new Blob([buffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'program.bin';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs transition-colors"
+              title="Download assembled binary (.bin)"
+            >
+              <Download size={14} />
+              BIN
+            </button>
+          </div>
 
           <div className="relative">
             <button

@@ -327,6 +327,14 @@ export class MMU {
       this.state.faultAddr = vaddr;
       this.state.faultFlags = 0;
       this.state.pageFaults++;
+      if (this.onEvent) {
+        this.onEvent({
+          type: 'pageFault',
+          cycle: BigInt(0),
+          pc: 0,
+          details: { vaddr, steps },
+        });
+      }
       return {
         result: { paddr: 0, tlbHit: false, pageFault: true },
         steps,
@@ -370,6 +378,14 @@ export class MMU {
       this.state.faultAddr = vaddr;
       this.state.faultFlags = 0;
       this.state.pageFaults++;
+      if (this.onEvent) {
+        this.onEvent({
+          type: 'pageFault',
+          cycle: BigInt(0),
+          pc: 0,
+          details: { vaddr, steps },
+        });
+      }
       return {
         result: { paddr: 0, tlbHit: false, pageFault: true },
         steps,
@@ -387,6 +403,14 @@ export class MMU {
       this.state.faultAddr = vaddr;
       this.state.faultFlags = PTE_WRITABLE;
       this.state.pageFaults++;
+      if (this.onEvent) {
+        this.onEvent({
+          type: 'pageFault',
+          cycle: BigInt(0),
+          pc: 0,
+          details: { vaddr, steps, reason: 'Write protection fault' },
+        });
+      }
       return {
         result: { paddr: 0, tlbHit: false, pageFault: true },
         steps,
@@ -403,6 +427,14 @@ export class MMU {
       this.state.faultAddr = vaddr;
       this.state.faultFlags = PTE_USER;
       this.state.pageFaults++;
+      if (this.onEvent) {
+        this.onEvent({
+          type: 'pageFault',
+          cycle: BigInt(0),
+          pc: 0,
+          details: { vaddr, steps, reason: 'User protection fault' },
+        });
+      }
       return {
         result: { paddr: 0, tlbHit: false, pageFault: true },
         steps,
