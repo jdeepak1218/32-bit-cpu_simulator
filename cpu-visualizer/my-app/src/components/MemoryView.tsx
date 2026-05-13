@@ -1,139 +1,34 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import { useCPUStore } from '@/lib/store';
 import {
   PAGE_SIZE,
   PAGE_MASK,
-  PHYS_MEM_SIZE,
-  FRAME_COUNT,
   extractVPN,
   extractOffset,
   extractPDIndex,
   extractPTIndex,
   formatFlags,
   PTE_PRESENT,
-  PTE_WRITABLE,
-  PTE_USER,
-  PTE_DIRTY,
-  PTE_ACCESSED,
+  PHYS_MEM_SIZE,
+  FRAME_COUNT,
 } from '@/types/cpu';
-import { Search, Layers, Grid3X3 } from 'lucide-react';
 
-// Memory segment colors
-const SEGMENT_COLORS = {
-  code: { bg: 'bg-emerald-900/40', border: 'border-emerald-500/50', text: 'text-emerald-400' },
-  data: { bg: 'bg-blue-900/40', border: 'border-blue-500/50', text: 'text-blue-400' },
-  stack: { bg: 'bg-amber-900/40', border: 'border-amber-500/50', text: 'text-amber-400' },
-  heap: { bg: 'bg-purple-900/40', border: 'border-purple-500/50', text: 'text-purple-400' },
-  unmapped: { bg: 'bg-gray-800/40', border: 'border-gray-600/50', text: 'text-gray-500' },
-  highlighted: { bg: 'bg-cyan-900/60', border: 'border-cyan-400', text: 'text-cyan-300' },
+// Compact segment colors
+const SEGMENT_COLORS: Record<string, string> = {
+  code: 'bg-emerald-600',
+  stack: 'bg-amber-500',
+  heap: 'bg-purple-500',
+  unmapped: 'bg-gray-800',
+  highlighted: 'bg-cyan-400',
 };
 
-interface MemoryCellProps {
-  address: number;
-  value: number;
-  isHighlighted?: boolean;
-  onClick?: () => void;
-}
-
-function MemoryCell({ address, value, isHighlighted, onClick }: MemoryCellProps) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.1 }}
-      onClick={onClick}
-      className={`w-3 h-3 rounded-sm cursor-pointer transition-colors ${
-        isHighlighted ? 'bg-cyan-400 shadow-lg shadow-cyan-400/50' : 'bg-gray-700 hover:bg-gray-600'
-      }`}
-      title={`0x${address.toString(16).padStart(8, '0').toUpperCase()}: 0x${value.toString(16).padStart(2, '0').toUpperCase()}`}
-    />
-  );
-}
-
-interface PageBlockProps {
-  vaddr: number;
-  paddr: number | null;
-  isMapped: boolean;
-  flags: number;
-  isHighlighted: boolean;
-  onClick: () => void;
-}
-
-function PageBlock({ vaddr, paddr, isMapped, flags, isHighlighted, onClick }: PageBlockProps) {
-  let segmentType: keyof typeof SEGMENT_COLORS = 'unmapped';
-
-  if (isMapped) {
-    if (vaddr < 0x4000) {
-      segmentType = 'code';
-    } else if (vaddr >= 0x3FF000) {
-      segmentType = 'stack';
-    } else {
-      segmentType = 'heap';
-    }
-  }
-
-  const colors = SEGMENT_COLORS[segmentType];
-
-  return (
-    <motion.div
-      whileHover={{ scale: 1.05 }}
-      onClick={onClick}
-      className={`relative p-2 rounded border ${colors.bg} ${colors.border} ${
-        isHighlighted ? `ring-2 ring-cyan-400 ${SEGMENT_COLORS.highlighted.bg}` : ''
-      } cursor-pointer transition-all`}
-    >
-      <div className="text-xs font-mono text-gray-400">
-        VPN 0x{extractVPN(vaddr).toString(16).toUpperCase()}
-      </div>
-      <div className={`text-xs font-mono ${colors.text}`}>
-        VA: 0x{vaddr.toString(16).padStart(8, '0').toUpperCase().slice(0, 6)}...
-      </div>
-      {isMapped ? (
-        <>
-          <div className="text-xs font-mono text-gray-500">
-            PA: 0x{paddr?.toString(16).padStart(8, '0').toUpperCase().slice(0, 6)}...
-          </div>
-          <div className="text-xs font-mono text-gray-600 mt-1">
-            {formatFlags(flags)}
-          </div>
-        </>
-      ) : (
-        <div className="text-xs font-mono text-gray-600">Unmapped</div>
-      )}
-    </motion.div>
-  );
-}
-
-interface FrameBlockProps {
-  frameNum: number;
-  isAllocated: boolean;
-  isHighlighted: boolean;
-  onClick: () => void;
-}
-
-function FrameBlock({ frameNum, isAllocated, isHighlighted, onClick }: FrameBlockProps) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.05 }}
-      onClick={onClick}
-      className={`p-2 rounded border cursor-pointer transition-all ${
-        isAllocated
-          ? 'bg-emerald-900/40 border-emerald-500/50'
-          : 'bg-gray-800/40 border-gray-600/50'
-      } ${isHighlighted ? 'ring-2 ring-cyan-400 bg-cyan-900/60' : ''}`}
-    >
-      <div className="text-xs font-mono text-gray-400">
-        Frame {frameNum}
-      </div>
-      <div className={`text-xs font-mono ${isAllocated ? 'text-emerald-400' : 'text-gray-600'}`}>
-        0x{(frameNum * PAGE_SIZE).toString(16).padStart(8, '0').toUpperCase()}
-      </div>
-      <div className="text-xs font-mono text-gray-600 mt-1">
-        {isAllocated ? 'Allocated' : 'Free'}
-      </div>
-    </motion.div>
-  );
+function getSegmentType(vaddr: number, isMapped: boolean): string {
+  if (!isMapped) return 'unmapped';
+  if (vaddr < 0x4000) return 'code';
+  if (vaddr >= 0x3FF000) return 'stack';
+  return 'heap';
 }
 
 export default function MemoryView() {
@@ -144,19 +39,16 @@ export default function MemoryView() {
   const [viewMode, setViewMode] = useState<'virtual' | 'physical' | 'hex'>('virtual');
   const [searchAddress, setSearchAddress] = useState('');
   const [selectedPage, setSelectedPage] = useState(0);
+  const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
 
-  // Build virtual memory map
+  // ---- Virtual memory map - compact grid of 32 pages ----
   const virtualPages = useMemo(() => {
     const pages: { vaddr: number; paddr: number | null; flags: number; isMapped: boolean }[] = [];
-
-    // Check first 16 pages for display
     for (let i = 0; i < 32; i++) {
       const vaddr = i * PAGE_SIZE;
       const pdIdx = extractPDIndex(vaddr);
       const ptIdx = extractPTIndex(vaddr);
       const pdeAddr = mmuState.cr3 + pdIdx * 4;
-
-      // Read PDE
       const pde =
         (mmuState.physMem[pdeAddr]) |
         (mmuState.physMem[pdeAddr + 1] << 8) |
@@ -182,26 +74,20 @@ export default function MemoryView() {
           isMapped = true;
         }
       }
-
       pages.push({ vaddr, paddr, flags, isMapped });
     }
-
     return pages;
   }, [mmuState.physMem, mmuState.cr3]);
 
-  // Build physical frame map
+  // ---- Physical frame map ----
   const physicalFrames = useMemo(() => {
     const frames: { frameNum: number; isAllocated: boolean }[] = [];
     const frameBitmap = mmuState.frameBitmap;
-
-    // Show first 32 frames
     for (let i = 0; i < 32; i++) {
       const byteIdx = Math.floor(i / 8);
       const bitIdx = i % 8;
-      const isAllocated = !!(frameBitmap[byteIdx] & (1 << bitIdx));
-      frames.push({ frameNum: i, isAllocated });
+      frames.push({ frameNum: i, isAllocated: !!(frameBitmap[byteIdx] & (1 << bitIdx)) });
     }
-
     return frames;
   }, [mmuState.frameBitmap]);
 
@@ -212,172 +98,227 @@ export default function MemoryView() {
     setHighlightedMemory(addr, null);
   };
 
+  const handlePageClick = (page: typeof virtualPages[number]) => {
+    const vpn = extractVPN(page.vaddr);
+    setSelectedPage(vpn);
+    setHighlightedMemory(page.vaddr, page.paddr);
+    try {
+      const { steps } = mmu.pageTableWalk(page.vaddr, false, false);
+      if (steps && steps.length) {
+        setCurrentPageWalkSteps(steps);
+        setShowPageWalk(true);
+      }
+    } catch (_) { /* ignore */ }
+  };
+
+  const handleFrameClick = (frame: typeof physicalFrames[number]) => {
+    setSelectedFrame(frame.frameNum);
+    setHighlightedMemory(null, frame.frameNum * PAGE_SIZE);
+  };
+
+  // ---- Render: Virtual View ----
   const renderVirtualView = () => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-emerald-900/40 border border-emerald-500/50"></div>
-          <span className="text-gray-400">Code</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-blue-900/40 border border-blue-500/50"></div>
-          <span className="text-gray-400">Data</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-amber-900/40 border border-amber-500/50"></div>
-          <span className="text-gray-400">Stack</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-purple-900/40 border border-purple-500/50"></div>
-          <span className="text-gray-400">Heap</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-gray-800 border border-gray-600"></div>
-          <span className="text-gray-400">Unmapped</span>
-        </div>
+    <div className="space-y-3">
+      {/* Color legend */}
+      <div className="flex items-center gap-3 text-[10px] text-gray-500">
+        {['Code', 'Stack', 'Heap'].map((label) => (
+          <span key={label} className="flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded ${SEGMENT_COLORS[label.toLowerCase()]}`} />
+            {label}
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5">
+          <span className={`w-2.5 h-2.5 rounded ${SEGMENT_COLORS.unmapped}`} />
+          Unmapped
+        </span>
+        <span className="text-gray-600">|</span>
+        <span className="flex items-center gap-1.5">
+          <span className={`w-2.5 h-2.5 rounded ${SEGMENT_COLORS.highlighted}`} />
+          Selected
+        </span>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      {/* Compact memory map grid */}
+      <div className="grid grid-cols-8 sm:grid-cols-8 md:grid-cols-16 gap-1">
+        {virtualPages.map((page) => {
+          const isHL = highlightedMemoryVAddr !== null &&
+            extractVPN(highlightedMemoryVAddr) === extractVPN(page.vaddr);
+          const segType = getSegmentType(page.vaddr, page.isMapped);
+          const colorClass = isHL ? SEGMENT_COLORS.highlighted : SEGMENT_COLORS[segType];
+          return (
+            <button
+              key={page.vaddr}
+              onClick={() => handlePageClick(page)}
+              title={`VPN ${extractVPN(page.vaddr)} | VA: 0x${page.vaddr.toString(16).padStart(8, '0').toUpperCase()}${page.isMapped ? ` | PA: 0x${page.paddr!.toString(16).padStart(8, '0').toUpperCase()}` : ' | Unmapped'}`}
+              className={`aspect-square rounded cursor-pointer transition-all hover:opacity-80 hover:scale-110 ${colorClass} ${isHL ? 'ring-2 ring-cyan-300 ring-offset-1 ring-offset-gray-900' : ''}`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Page labels */}
+      <div className="grid grid-cols-8 sm:grid-cols-8 md:grid-cols-16 gap-1 text-[9px] font-mono text-gray-600 text-center">
         {virtualPages.map((page) => (
-          <PageBlock
-            key={page.vaddr}
-            {...page}
-            isHighlighted={highlightedMemoryVAddr !== null &&
-              extractVPN(highlightedMemoryVAddr) === extractVPN(page.vaddr)}
-            onClick={() => {
-              setHighlightedMemory(page.vaddr, page.paddr);
-              setSelectedPage(extractVPN(page.vaddr));
-              // Trigger a translation to produce page-walk steps and show the walker UI
-              try {
-                const { steps } = mmu.pageTableWalk(page.vaddr, false, false);
-                if (steps && steps.length) {
-                  setCurrentPageWalkSteps(steps);
-                  setShowPageWalk(true);
-                }
-              } catch (e) {
-                // ignore translation errors here
-              }
-            }}
-          />
+          <span key={page.vaddr}>{extractVPN(page.vaddr)}</span>
         ))}
       </div>
 
-      {/* Page Details */}
+      {/* Detail panel for selected page */}
       {selectedPage >= 0 && virtualPages[selectedPage] && (
-        <div className="mt-4 p-3 bg-gray-800/50 rounded border border-gray-700">
-          <h4 className="text-xs font-semibold text-cyan-400 mb-2">Page Details (VPN {selectedPage})</h4>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="text-gray-500">Virtual Address:</div>
-            <div className="font-mono text-gray-300">
-              0x{virtualPages[selectedPage].vaddr.toString(16).padStart(8, '0').toUpperCase()}
-            </div>
-            <div className="text-gray-500">Physical Address:</div>
-            <div className="font-mono text-gray-300">
+        <div className="p-3 bg-gray-800/80 rounded border border-gray-700 text-xs space-y-1.5 transition-all">
+          <div className="text-cyan-400 font-semibold mb-2">Page VPN {selectedPage}</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span className="text-gray-500">Virtual Addr:</span>
+            <span className="font-mono text-gray-200">0x{virtualPages[selectedPage].vaddr.toString(16).padStart(8, '0').toUpperCase()}</span>
+
+            <span className="text-gray-500">Physical Addr:</span>
+            <span className="font-mono text-gray-200">
               {virtualPages[selectedPage].paddr
                 ? `0x${virtualPages[selectedPage].paddr.toString(16).padStart(8, '0').toUpperCase()}`
-                : 'Unmapped'}
-            </div>
-            <div className="text-gray-500">Flags:</div>
-            <div className="font-mono text-gray-300">
-              {formatFlags(virtualPages[selectedPage].flags)}
-            </div>
-            <div className="text-gray-500">PD Index:</div>
-            <div className="font-mono text-gray-300">{extractPDIndex(virtualPages[selectedPage].vaddr)}</div>
-            <div className="text-gray-500">PT Index:</div>
-            <div className="font-mono text-gray-300">{extractPTIndex(virtualPages[selectedPage].vaddr)}</div>
-            <div className="text-gray-500">Offset:</div>
-            <div className="font-mono text-gray-300">{extractOffset(virtualPages[selectedPage].vaddr).toString(16)}</div>
+                : <span className="text-red-400">Unmapped</span>}
+            </span>
+
+            {virtualPages[selectedPage].isMapped && (
+              <>
+                <span className="text-gray-500">Flags:</span>
+                <span className="font-mono text-amber-400">{formatFlags(virtualPages[selectedPage].flags)}</span>
+              </>
+            )}
+
+            <span className="text-gray-500">PD Index:</span>
+            <span className="font-mono text-gray-400">{extractPDIndex(virtualPages[selectedPage].vaddr)}</span>
+
+            <span className="text-gray-500">PT Index:</span>
+            <span className="font-mono text-gray-400">{extractPTIndex(virtualPages[selectedPage].vaddr)}</span>
+
+            <span className="text-gray-500">Offset:</span>
+            <span className="font-mono text-gray-400">0x{extractOffset(virtualPages[selectedPage].vaddr).toString(16)}</span>
           </div>
         </div>
       )}
     </div>
   );
 
+  // ---- Render: Physical View ----
   const renderPhysicalView = () => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-emerald-900/40 border border-emerald-500/50"></div>
-          <span className="text-gray-400">Allocated</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm bg-gray-800 border border-gray-600"></div>
-          <span className="text-gray-400">Free</span>
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-emerald-600" />
+          Allocated
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-gray-800 border border-gray-700" />
+          Free
+        </span>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-8 gap-1">
+        {physicalFrames.map((frame) => {
+          const isHL = highlightedMemoryPAddr !== null &&
+            Math.floor(highlightedMemoryPAddr / PAGE_SIZE) === frame.frameNum;
+          return (
+            <button
+              key={frame.frameNum}
+              onClick={() => handleFrameClick(frame)}
+              title={`Frame ${frame.frameNum} | 0x${(frame.frameNum * PAGE_SIZE).toString(16).padStart(8, '0').toUpperCase()} | ${frame.isAllocated ? 'Allocated' : 'Free'}`}
+              className={`aspect-square rounded cursor-pointer transition-all hover:opacity-80 hover:scale-110 ${
+                isHL
+                  ? 'bg-cyan-500 ring-2 ring-cyan-300 ring-offset-1 ring-offset-gray-900'
+                  : frame.isAllocated
+                    ? 'bg-emerald-700'
+                    : 'bg-gray-800 border border-gray-700'
+              }`}
+            />
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-8 gap-1 text-[9px] font-mono text-gray-600 text-center">
         {physicalFrames.map((frame) => (
-          <FrameBlock
-            key={frame.frameNum}
-            {...frame}
-            isHighlighted={highlightedMemoryPAddr !== null &&
-              Math.floor(highlightedMemoryPAddr / PAGE_SIZE) === frame.frameNum}
-            onClick={() => setHighlightedMemory(null, frame.frameNum * PAGE_SIZE)}
-          />
+          <span key={frame.frameNum}>{frame.frameNum}</span>
         ))}
       </div>
 
-      <div className="text-xs text-gray-500 mt-4">
-        Total Frames: {FRAME_COUNT.toLocaleString()} | Frame Size: {PAGE_SIZE.toLocaleString()} bytes
+      {selectedFrame !== null && (
+        <div className="p-3 bg-gray-800/80 rounded border border-gray-700 text-xs space-y-1.5">
+          <div className="text-emerald-400 font-semibold mb-2">Frame {selectedFrame}</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span className="text-gray-500">Physical Addr:</span>
+            <span className="font-mono text-gray-200">0x{(selectedFrame * PAGE_SIZE).toString(16).padStart(8, '0').toUpperCase()}</span>
+            <span className="text-gray-500">Status:</span>
+            <span className={physicalFrames[selectedFrame]?.isAllocated ? 'text-green-400' : 'text-gray-500'}>
+              {physicalFrames[selectedFrame]?.isAllocated ? 'Allocated' : 'Free'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="text-[10px] text-gray-600">
+        Frames: {FRAME_COUNT.toLocaleString()} | Size: {PAGE_SIZE.toLocaleString()} B
       </div>
     </div>
   );
 
+  // ---- Render: Hex View ----
   const renderHexView = () => {
     const baseAddr = selectedPage * PAGE_SIZE;
     const bytes: { addr: number; value: number }[] = [];
-
     for (let i = 0; i < 64; i++) {
       const addr = baseAddr + i;
       if (mmuState.pagingEnabled) {
-        const { paddr } = mmu.translate(addr, false, false);
-        bytes.push({ addr, value: mmuState.physMem[paddr] });
+        const result = mmu.translate(addr, false, false);
+        if (!result.pageFault) {
+          bytes.push({ addr, value: mmuState.physMem[result.paddr] });
+        } else {
+          bytes.push({ addr, value: 0 });
+        }
       } else {
         bytes.push({ addr, value: mmuState.physMem[addr] });
       }
     }
 
     return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs text-gray-500">Page:</span>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-500">Page VPN:</span>
           <input
             type="number"
             value={selectedPage}
             onChange={(e) => setSelectedPage(parseInt(e.target.value) || 0)}
-            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
+            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300"
           />
+          <span className="text-[10px] text-gray-600">0x{baseAddr.toString(16).padStart(8, '0').toUpperCase()}</span>
         </div>
 
-        <div className="font-mono text-xs">
-          <div className="grid grid-cols-17 gap-1">
-            <div className="text-gray-600">Address</div>
+        <div className="font-mono text-[10px] leading-relaxed">
+          {/* Header */}
+          <div className="grid grid-cols-[auto_repeat(16,1fr)] gap-x-1 mb-1">
+            <div className="text-gray-600 pr-2">Addr</div>
             {Array.from({ length: 16 }, (_, i) => (
-              <div key={i} className="text-center text-gray-600">
-                +{i.toString(16).toUpperCase()}
-              </div>
+              <div key={i} className="text-center text-gray-600">{i.toString(16).toUpperCase()}</div>
             ))}
           </div>
-
+          {/* Rows */}
           {Array.from({ length: 4 }, (_, row) => (
-            <div key={row} className="grid grid-cols-17 gap-1">
-              <div className="text-gray-500">
+            <div key={row} className="grid grid-cols-[auto_repeat(16,1fr)] gap-x-1">
+              <div className="text-gray-500 pr-2">
                 {(baseAddr + row * 16).toString(16).padStart(8, '0').toUpperCase()}
               </div>
               {Array.from({ length: 16 }, (_, col) => {
                 const idx = row * 16 + col;
                 const byte = bytes[idx];
+                const isHL = highlightedMemoryVAddr !== null && highlightedMemoryVAddr === byte?.addr;
                 return (
-                  <motion.div
+                  <div
                     key={col}
-                    className={`text-center cursor-pointer hover:bg-gray-700 rounded ${
-                      highlightedMemoryVAddr === byte?.addr ? 'bg-cyan-900/50 text-cyan-400' : 'text-gray-400'
+                    onClick={() => byte && setHighlightedMemory(byte.addr, null)}
+                    className={`text-center cursor-pointer rounded transition-colors hover:bg-gray-700 ${
+                      isHL ? 'bg-cyan-900/70 text-cyan-300 font-semibold' : 'text-gray-400'
                     }`}
-                    onClick={() => setHighlightedMemory(byte?.addr, null)}
                   >
                     {byte?.value.toString(16).padStart(2, '0').toUpperCase()}
-                  </motion.div>
+                  </div>
                 );
               })}
             </div>
@@ -388,68 +329,59 @@ export default function MemoryView() {
   };
 
   return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
+    <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 bg-gradient-to-r from-gray-800 to-gray-850 border-b border-gray-700">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-            Memory
-          </h2>
-
-          <div className="flex items-center gap-1 bg-gray-900 rounded p-1">
-            {[
-              { mode: 'virtual', icon: Layers, label: 'Virtual' },
-              { mode: 'physical', icon: Grid3X3, label: 'Physical' },
-              { mode: 'hex', icon: Search, label: 'Hex' },
-            ].map(({ mode, icon: Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode as typeof viewMode)}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
-                  viewMode === mode
-                    ? 'bg-cyan-600 text-white'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            type="text"
-            value={searchAddress}
-            onChange={(e) => setSearchAddress(e.target.value)}
-            placeholder="Search address (hex)"
-            className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1 text-xs text-gray-300 focus:border-cyan-500 outline-none"
-          />
-          <button
-            onClick={handleSearch}
-            className="p-1 text-gray-400 hover:text-cyan-400 transition-colors"
-          >
-            <Search size={16} />
-          </button>
+      <div className="px-3 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-cyan-400">Memory</h2>
+        <div className="flex items-center gap-0.5 bg-gray-900 rounded text-xs">
+          {(['virtual', 'physical', 'hex'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-2 py-1 rounded transition-colors ${
+                viewMode === mode
+                  ? 'bg-cyan-600 text-white font-medium'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* Search bar */}
+      <div className="px-3 py-2 border-b border-gray-800 flex gap-2">
+        <input
+          type="text"
+          value={searchAddress}
+          onChange={(e) => setSearchAddress(e.target.value)}
+          placeholder="Address (hex)"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-cyan-500 outline-none"
+        />
+        <button
+          onClick={handleSearch}
+          className="px-2 py-1 text-xs text-gray-400 hover:text-cyan-400 bg-gray-800 rounded border border-gray-700 transition-colors"
+        >
+          Go
+        </button>
+      </div>
+
       {/* Content */}
-      <div className="p-4">
+      <div className="p-3">
         {viewMode === 'virtual' && renderVirtualView()}
         {viewMode === 'physical' && renderPhysicalView()}
         {viewMode === 'hex' && renderHexView()}
       </div>
 
-      {/* Footer Stats */}
-      <div className="px-4 py-2 bg-gradient-to-r from-gray-800/40 to-gray-800/20 border-t border-gray-700">
-        <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span className="text-emerald-400">Physical: {(PHYS_MEM_SIZE / 1024 / 1024)}MB</span>
-          <span className="text-cyan-400">Page Size: {PAGE_SIZE}B</span>
-          <span className={mmuState.pagingEnabled ? 'text-green-400' : 'text-gray-500'}>Paging: {mmuState.pagingEnabled ? 'ON' : 'OFF'}</span>
-          <span className="text-amber-400">CR3: 0x{mmuState.cr3.toString(16).padStart(8, '0').toUpperCase()}</span>
-        </div>
+      {/* Footer */}
+      <div className="px-3 py-1.5 bg-gray-800/50 border-t border-gray-800 flex items-center gap-3 text-[10px] text-gray-600">
+        <span className="text-emerald-400 font-mono">{(PHYS_MEM_SIZE / 1024 / 1024)}MB</span>
+        <span>{PAGE_SIZE}B pages</span>
+        <span className={mmuState.pagingEnabled ? 'text-green-400' : ''}>
+          Paging: {mmuState.pagingEnabled ? 'ON' : 'OFF'}
+        </span>
+        <span className="text-amber-400 font-mono">CR3: 0x{mmuState.cr3.toString(16).padStart(8, '0').toUpperCase()}</span>
       </div>
     </div>
   );
