@@ -1,4 +1,4 @@
-# 🖥️ 32-bit CPU Emulator — From Scratch in C
+#  32-bit CPU Emulator — From Scratch in C
 
 > **Built entirely from scratch to deeply understand how a CPU, memory management unit (MMU), paging, interrupts, and assembly-level execution work under the hood.**
 
