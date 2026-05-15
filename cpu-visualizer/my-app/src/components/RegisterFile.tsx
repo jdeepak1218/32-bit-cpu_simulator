@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useState, useRef } from 'react';
 import { useCPUStore } from '@/lib/store';
 import {
   formatCPUFlags,
@@ -20,42 +19,32 @@ interface RegisterCardProps {
 }
 
 function RegisterCard({ index, value, isHighlighted, isSpecial, label }: RegisterCardProps) {
-  const [prevValue, setPrevValue] = useState(value);
+  const prevValueRef = useRef(value);
   const [isAnimating, setIsAnimating] = useState(false);
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (value !== prevValue) {
+    if (value !== prevValueRef.current) {
+      prevValueRef.current = value;
       setIsAnimating(true);
-      setPrevValue(value);
-      const timer = setTimeout(() => setIsAnimating(false), 500);
-      return () => clearTimeout(timer);
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+      animTimerRef.current = setTimeout(() => setIsAnimating(false), 400);
     }
-  }, [value, prevValue]);
+    return () => {
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    };
+  }, [value]);
 
   return (
-    <motion.div
-      initial={false}
-      animate={{
-        scale: isHighlighted ? 1.05 : 1,
-        borderColor: isHighlighted
-          ? isSpecial
-            ? '#fbbf24'
-            : '#10b981'
-          : 'rgba(75, 85, 99, 0.5)',
-        backgroundColor: isHighlighted
-          ? isSpecial
-            ? 'rgba(251, 191, 36, 0.25)'
-            : 'rgba(16, 185, 129, 0.2)'
-          : 'rgba(31, 41, 55, 0.8)',
-      }}
-      transition={{ duration: 0.2 }}
-      className={`relative p-3 rounded-lg border transition-all duration-200 card-hover ${
+    <div
+      className={`relative p-3 rounded-lg border transition-all duration-200 ${
         isSpecial
           ? 'border-amber-500/50 bg-gradient-to-br from-amber-900/20 to-amber-800/5'
           : 'border-gray-700 bg-gradient-to-br from-gray-800/80 to-gray-800/40'
-      } ${isHighlighted ? 'shadow-xl shadow-green-500/25 ring-1 ring-green-400/40' : 'shadow-sm'}`}
+      } ${isHighlighted ? 'shadow-xl shadow-green-500/25 ring-1 ring-green-400/40 scale-[1.02]' : 'shadow-sm'} ${
+        isAnimating ? 'ring-1 ring-emerald-400/30' : ''
+      }`}
     >
-      {/* Register Name */}
       <div className="flex items-center justify-between mb-2">
         <span className={`text-xs font-mono font-semibold ${
           isSpecial ? 'text-amber-400' : 'text-cyan-400'
@@ -63,24 +52,16 @@ function RegisterCard({ index, value, isHighlighted, isSpecial, label }: Registe
           {label || `R${index}`}
         </span>
         {isHighlighted && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-2 h-2 bg-green-400 rounded-full"
-          />
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
         )}
       </div>
 
-      {/* Register Value */}
       <div className="space-y-1">
-        <motion.div
-          key={value}
-          initial={isAnimating ? { opacity: 0.5, y: -5 } : false}
-          animate={{ opacity: 1, y: 0 }}
-          className={`text-sm font-mono ${isAnimating ? 'text-green-300 code-glow' : 'text-green-400 code-glow'}`}
-        >
+        <div className={`text-sm font-mono transition-colors duration-200 ${
+          isAnimating ? 'text-emerald-300' : 'text-green-400'
+        }`}>
           0x{value.toString(16).padStart(8, '0').toUpperCase()}
-        </motion.div>
+        </div>
         <div className="text-xs font-mono text-gray-500">
           {value}
         </div>
@@ -88,7 +69,7 @@ function RegisterCard({ index, value, isHighlighted, isSpecial, label }: Registe
           {value.toString(2).padStart(32, '0').replace(/(.{8})(?=.)/g, '$1 ')}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -100,25 +81,26 @@ interface FlagBitProps {
 
 function FlagBit({ name, value, color }: FlagBitProps) {
   return (
-    <motion.div
-      animate={{
+    <div
+      className="flex flex-col items-center p-2 rounded border transition-all duration-150"
+      style={{
         backgroundColor: value ? `${color}40` : 'rgba(31, 41, 55, 0.8)',
         borderColor: value ? color : 'rgba(75, 85, 99, 0.5)',
       }}
-      className="flex flex-col items-center p-2 rounded border"
     >
-      <span className={`text-xs font-bold ${value ? 'text-white' : 'text-gray-500'}`}>
+      <span className={`text-xs font-bold transition-colors ${value ? 'text-white' : 'text-gray-500'}`}>
         {name}
       </span>
-      <span className={`text-xs font-mono ${value ? color.replace('bg-', 'text-') : 'text-gray-600'}`}>
+      <span className={`text-xs font-mono ${value ? color.replace('bg-', 'text-').replace('#', '') : 'text-gray-600'}`}
+        style={{ color: value ? color : undefined }}>
         {value ? '1' : '0'}
       </span>
-    </motion.div>
+    </div>
   );
 }
 
 export default function RegisterFile() {
-  const { cpu, highlightedRegister, executionLog, setHighlightedRegister } = useCPUStore();
+  const { cpu, highlightedRegister, executionLog } = useCPUStore();
   const cpuState = cpu.getState();
 
   const flags = cpuState.flags;
@@ -135,9 +117,11 @@ export default function RegisterFile() {
     { name: 'CR3', value: cpuState.cr3, label: 'Page Dir Base' },
   ];
 
+  // Get last written register value for Result display
+  const lastWrittenReg = executionLog.length > 0 ? executionLog[executionLog.length - 1].registersAfter : null;
+
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-      {/* Header */}
       <div className="px-4 py-3 bg-gray-800 border-b border-gray-700">
         <h2 className="text-sm font-semibold text-cyan-400">
           Register File
@@ -172,6 +156,19 @@ export default function RegisterFile() {
             ))}
           </div>
         </div>
+
+        {/* Result Display - shows last computation result */}
+        {lastWrittenReg && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+              Last Result (R0)
+            </h3>
+            <div className="p-3 rounded-lg border border-emerald-500/30 bg-gradient-to-br from-emerald-900/20 to-emerald-800/5">
+              <div className="text-xs text-emerald-400 font-mono mb-1">R0 = 0x{lastWrittenReg[0].toString(16).padStart(8, '0').toUpperCase()}</div>
+              <div className="text-xs text-gray-400 font-mono">Decimal: {lastWrittenReg[0] >>> 0}</div>
+            </div>
+          </div>
+        )}
 
         {/* General Purpose Registers */}
         <div className="space-y-2">

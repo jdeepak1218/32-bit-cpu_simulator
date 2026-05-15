@@ -1,6 +1,6 @@
 /**
  * 32-bit Assembler
- * Translates from C implementation (assembler32.c)
+ * Translated from C implementation (assembler32.c)
  */
 
 import {
@@ -16,47 +16,9 @@ interface Label {
   address: number;
 }
 
-const InstructionFormats: Record<string, { op: Opcode; hasDst: boolean; hasSrc: boolean; hasImm: boolean }> = {
-  NOP: { op: Opcode.NOP, hasDst: false, hasSrc: false, hasImm: false },
-  HALT: { op: Opcode.HALT, hasDst: false, hasSrc: false, hasImm: false },
-  RET: { op: Opcode.RET, hasDst: false, hasSrc: false, hasImm: false },
-  STI: { op: Opcode.STI, hasDst: false, hasSrc: false, hasImm: false },
-  CLI: { op: Opcode.CLI, hasDst: false, hasSrc: false, hasImm: false },
-  IRET: { op: Opcode.IRET, hasDst: false, hasSrc: false, hasImm: false },
-  MOV: { op: Opcode.MOV, hasDst: true, hasSrc: true, hasImm: false },
-  ADD: { op: Opcode.ADD, hasDst: true, hasSrc: true, hasImm: false },
-  SUB: { op: Opcode.SUB, hasDst: true, hasSrc: true, hasImm: false },
-  AND: { op: Opcode.AND, hasDst: true, hasSrc: true, hasImm: false },
-  OR: { op: Opcode.OR, hasDst: true, hasSrc: true, hasImm: false },
-  XOR: { op: Opcode.XOR, hasDst: true, hasSrc: true, hasImm: false },
-  NOT: { op: Opcode.NOT, hasDst: true, hasSrc: false, hasImm: false },
-  CMP: { op: Opcode.CMP, hasDst: true, hasSrc: true, hasImm: false },
-  MUL: { op: Opcode.MUL, hasDst: true, hasSrc: true, hasImm: false },
-  DIV: { op: Opcode.DIV, hasDst: true, hasSrc: true, hasImm: false },
-  MOD: { op: Opcode.MOD, hasDst: true, hasSrc: true, hasImm: false },
-  SHL: { op: Opcode.SHL, hasDst: true, hasSrc: false, hasImm: true },
-  SHR: { op: Opcode.SHR, hasDst: true, hasSrc: false, hasImm: true },
-  ROL: { op: Opcode.ROL, hasDst: true, hasSrc: true, hasImm: false },
-  ROR: { op: Opcode.ROR, hasDst: true, hasSrc: true, hasImm: false },
-  SWAP: { op: Opcode.SWAP, hasDst: true, hasSrc: true, hasImm: false },
-  LDR: { op: Opcode.LDR, hasDst: true, hasSrc: true, hasImm: false },
-  STR: { op: Opcode.STR, hasDst: true, hasSrc: true, hasImm: false },
-  LOAD: { op: Opcode.LOAD, hasDst: true, hasSrc: false, hasImm: true },
-  PUSH: { op: Opcode.PUSH, hasDst: false, hasSrc: true, hasImm: false },
-  POP: { op: Opcode.POP, hasDst: true, hasSrc: false, hasImm: false },
-  JMP: { op: Opcode.JMP, hasDst: false, hasSrc: false, hasImm: false },
-  JZ: { op: Opcode.JZ, hasDst: false, hasSrc: false, hasImm: false },
-  JNZ: { op: Opcode.JNZ, hasDst: false, hasSrc: false, hasImm: false },
-  JN: { op: Opcode.JN, hasDst: false, hasSrc: false, hasImm: false },
-  JGT: { op: Opcode.JGT, hasDst: false, hasSrc: false, hasImm: false },
-  JLT: { op: Opcode.JLT, hasDst: false, hasSrc: false, hasImm: false },
-  JGE: { op: Opcode.JGE, hasDst: false, hasSrc: false, hasImm: false },
-  JLE: { op: Opcode.JLE, hasDst: false, hasSrc: false, hasImm: false },
-  CALL: { op: Opcode.CALL, hasDst: false, hasSrc: false, hasImm: false },
-};
-
 function parseRegister(str: string): number {
-  const clean = str.trim().replace(',', '');
+  if (!str) return -1;
+  const clean = str.trim().replace(/,$/, '').trim();
   const match = clean.match(/^[rR](\d+)$/);
   if (match) {
     const reg = parseInt(match[1], 10);
@@ -68,17 +30,32 @@ function parseRegister(str: string): number {
 }
 
 function parseImmediate(str: string): number {
-  const clean = str.trim().replace(',', '');
-  // Handle hex numbers
+  if (!str) return 0;
+  const clean = str.trim().replace(/,$/, '').trim();
   if (clean.startsWith('0x') || clean.startsWith('0X')) {
     return parseInt(clean, 16);
   }
-  // Handle binary numbers
   if (clean.startsWith('0b') || clean.startsWith('0B')) {
     return parseInt(clean.slice(2), 2);
   }
-  // Handle decimal
   return parseInt(clean, 10) || 0;
+}
+
+function parseLineArgs(line: string): { mnemonic: string; arg1: string; arg2: string } {
+  const trimmed = line.trim();
+  const match = trimmed.match(/^(\S+)\s+(\S+)\s*,\s*(\S+)/);
+  if (match) {
+    return { mnemonic: match[1].toUpperCase(), arg1: match[2], arg2: match[3] };
+  }
+  const match2 = trimmed.match(/^(\S+)\s+(\S+)/);
+  if (match2) {
+    return { mnemonic: match2[1].toUpperCase(), arg1: match2[2], arg2: '' };
+  }
+  const match3 = trimmed.match(/^(\S+)/);
+  if (match3) {
+    return { mnemonic: match3[1].toUpperCase(), arg1: '', arg2: '' };
+  }
+  return { mnemonic: '', arg1: '', arg2: '' };
 }
 
 export function assemble(source: string): { machineCode: number[]; assemblyLines: AssemblyLine[]; errors: string[] } {
@@ -87,39 +64,30 @@ export function assemble(source: string): { machineCode: number[]; assemblyLines
   const assemblyLines: AssemblyLine[] = [];
   const machineCode: number[] = [];
 
-  // First pass: collect labels
   const lines = source.split('\n');
   let address = 0;
 
+  // First pass: collect labels
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith(';')) continue;
 
-    // Check for label definition
-    const labelMatch = trimmed.match(/^(\w+):\s*$/);
+    const labelMatch = trimmed.match(/^(\w+):\s*(.*)$/);
     if (labelMatch) {
       const labelName = labelMatch[1];
+      const rest = labelMatch[2].trim();
+
       if (labels.find((l) => l.name === labelName)) {
         errors.push(`Duplicate label: ${labelName}`);
       } else {
         labels.push({ name: labelName, address });
       }
-      continue;
-    }
 
-    // Check for label + instruction on same line
-    const labelInstrMatch = trimmed.match(/^(\w+):\s*(.+)$/);
-    if (labelInstrMatch) {
-      const labelName = labelInstrMatch[1];
-      if (labels.find((l) => l.name === labelName)) {
-        errors.push(`Duplicate label: ${labelName}`);
-      } else {
-        labels.push({ name: labelName, address });
+      if (!rest || rest.startsWith(';')) {
+        continue;
       }
-      // Continue to process the instruction part
     }
 
-    // Count instruction
     const instrMatch = trimmed.match(/^([A-Za-z]+)/);
     if (instrMatch) {
       address += 4;
@@ -137,92 +105,147 @@ export function assemble(source: string): { machineCode: number[]; assemblyLines
       continue;
     }
 
-    // Skip label-only lines
-    if (/^\w+:\s*$/.test(trimmed)) {
-      const labelName = trimmed.replace(':', '').trim();
-      assemblyLines.push({
-        address,
-        machineCode: 0,
-        source: trimmed,
-        label: labelName,
-      });
-      continue;
-    }
-
-    // Extract label if present
     let currentLabel: string | undefined;
     let instrLine = trimmed;
-    const labelMatch = trimmed.match(/^(\w+):\s*(.+)$/);
+
+    const labelMatch = trimmed.match(/^(\w+):\s*(.*)$/);
     if (labelMatch) {
       currentLabel = labelMatch[1];
-      instrLine = labelMatch[2];
+      const rest = labelMatch[2].trim();
+      if (!rest || rest.startsWith(';')) {
+        assemblyLines.push({
+          address,
+          machineCode: 0,
+          source: trimmed,
+          label: currentLabel,
+        });
+        continue;
+      }
+      instrLine = rest;
     }
 
-    // Parse instruction
-    const parts = instrLine.split(/[\s,]+/).filter((p) => p);
-    if (parts.length === 0) continue;
+    const { mnemonic, arg1, arg2 } = parseLineArgs(instrLine);
 
-    const mnemonic = parts[0].toUpperCase();
-    const format = InstructionFormats[mnemonic];
-
-    if (!format) {
-      errors.push(`Unknown instruction: ${mnemonic} on line ${lineNum + 1}`);
-      address += 4;
+    if (!mnemonic) {
       continue;
     }
 
     let machineWord = 0;
 
-    if (mnemonic === 'CALL' || mnemonic.startsWith('J')) {
-      // Jump/CALL instruction
-      let target = 0;
-      if (parts[1]) {
-        const label = labels.find((l) => l.name === parts[1]);
+    switch (mnemonic) {
+      case 'NOP':
+      case 'HALT':
+      case 'RET':
+      case 'STI':
+      case 'CLI':
+      case 'IRET': {
+        const opMap: Record<string, Opcode> = {
+          NOP: Opcode.NOP, HALT: Opcode.HALT, RET: Opcode.RET,
+          STI: Opcode.STI, CLI: Opcode.CLI, IRET: Opcode.IRET,
+        };
+        machineWord = encodeInstruction(opMap[mnemonic], 0, 0, 0);
+        break;
+      }
+
+      case 'MOV':
+      case 'ADD':
+      case 'SUB':
+      case 'AND':
+      case 'OR':
+      case 'XOR':
+      case 'CMP':
+      case 'MUL':
+      case 'DIV':
+      case 'MOD':
+      case 'ROL':
+      case 'ROR':
+      case 'SWAP':
+      case 'LDR':
+      case 'STR': {
+        const opMap: Record<string, Opcode> = {
+          MOV: Opcode.MOV, ADD: Opcode.ADD, SUB: Opcode.SUB,
+          AND: Opcode.AND, OR: Opcode.OR, XOR: Opcode.XOR,
+          CMP: Opcode.CMP, MUL: Opcode.MUL, DIV: Opcode.DIV,
+          MOD: Opcode.MOD, ROL: Opcode.ROL, ROR: Opcode.ROR,
+          SWAP: Opcode.SWAP, LDR: Opcode.LDR, STR: Opcode.STR,
+        };
+        const dst = parseRegister(arg1);
+        const src = parseRegister(arg2);
+        if (dst < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        if (src < 0) errors.push(`Invalid register: ${arg2} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(opMap[mnemonic], dst >= 0 ? dst : 0, src >= 0 ? src : 0, 0);
+        break;
+      }
+
+      case 'NOT': {
+        const dst = parseRegister(arg1);
+        if (dst < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(Opcode.NOT, dst >= 0 ? dst : 0, 0, 0);
+        break;
+      }
+
+      case 'SHL':
+      case 'SHR': {
+        const dst = parseRegister(arg1);
+        const imm = parseImmediate(arg2);
+        if (dst < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(
+          mnemonic === 'SHL' ? Opcode.SHL : Opcode.SHR,
+          dst >= 0 ? dst : 0, 0, imm
+        );
+        break;
+      }
+
+      case 'LOAD': {
+        const dst = parseRegister(arg1);
+        const imm = parseImmediate(arg2);
+        if (dst < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(Opcode.LOAD, dst >= 0 ? dst : 0, 0, imm);
+        break;
+      }
+
+      case 'PUSH': {
+        const src = parseRegister(arg1);
+        if (src < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(Opcode.PUSH, 0, src >= 0 ? src : 0, 0);
+        break;
+      }
+
+      case 'POP': {
+        const dst = parseRegister(arg1);
+        if (dst < 0) errors.push(`Invalid register: ${arg1} on line ${lineNum + 1}`);
+        machineWord = encodeInstruction(Opcode.POP, dst >= 0 ? dst : 0, 0, 0);
+        break;
+      }
+
+      case 'CALL':
+      case 'JMP':
+      case 'JZ':
+      case 'JNZ':
+      case 'JN':
+      case 'JGT':
+      case 'JLT':
+      case 'JGE':
+      case 'JLE': {
+        const opMap: Record<string, Opcode> = {
+          CALL: Opcode.CALL, JMP: Opcode.JMP, JZ: Opcode.JZ,
+          JNZ: Opcode.JNZ, JN: Opcode.JN, JGT: Opcode.JGT,
+          JLT: Opcode.JLT, JGE: Opcode.JGE, JLE: Opcode.JLE,
+        };
+        let target = 0;
+        const label = labels.find((l) => l.name === arg1);
         if (label) {
           target = label.address;
-        } else {
-          // Try parsing as number
-          target = parseImmediate(parts[1]);
+        } else if (arg1) {
+          target = parseImmediate(arg1);
         }
-      }
-      machineWord = encodeJump(format.op, target);
-    } else {
-      // Regular instruction
-      let dst = 0;
-      let src = 0;
-      let imm = 0;
-
-      let argIdx = 1;
-
-      if (format.hasDst && argIdx < parts.length) {
-        const reg = parseRegister(parts[argIdx]);
-        if (reg >= 0) {
-          dst = reg;
-        } else {
-          errors.push(`Invalid register: ${parts[argIdx]} on line ${lineNum + 1}`);
-        }
-        argIdx++;
+        machineWord = encodeJump(opMap[mnemonic], target);
+        break;
       }
 
-      if (format.hasSrc && argIdx < parts.length) {
-        const reg = parseRegister(parts[argIdx]);
-        if (reg >= 0) {
-          src = reg;
-        } else {
-          // For instructions that expect a register, but got something else
-          errors.push(`Invalid register: ${parts[argIdx]} on line ${lineNum + 1}`);
-        }
-        argIdx++;
-      }
-
-      if (format.hasImm && argIdx < parts.length) {
-        imm = parseImmediate(parts[argIdx]);
-        if (imm < -131072 || imm > 131071) {
-          errors.push(`Immediate value out of range: ${imm} on line ${lineNum + 1}`);
-        }
-      }
-
-      machineWord = encodeInstruction(format.op, dst, src, imm);
+      default:
+        errors.push(`Unknown instruction: ${mnemonic} on line ${lineNum + 1}`);
+        break;
     }
 
     machineCode.push(machineWord);
@@ -241,33 +264,57 @@ export function assemble(source: string): { machineCode: number[]; assemblyLines
 export function disassemble(machineCode: number): string {
   const { opcode, mnemonic, dst, src, imm, address } = disassembleToParts(machineCode);
 
-  // Check if it's a jump instruction
   if (opcode >= Opcode.JMP && opcode <= Opcode.CALL) {
     return `${mnemonic} 0x${address.toString(16)}`;
   }
 
-  // Build argument string
   const args: string[] = [];
 
-  // Check instruction format
-  const format = InstructionFormats[mnemonic];
-  if (!format) return `${mnemonic} ???`;
+  switch (mnemonic) {
+    case 'NOP':
+    case 'HALT':
+    case 'RET':
+    case 'STI':
+    case 'CLI':
+    case 'IRET':
+      return mnemonic;
 
-  if (format.hasDst) {
-    args.push(`R${dst}`);
-  }
-  if (format.hasSrc) {
-    args.push(`R${src}`);
-  }
-  if (format.hasImm) {
-    if (mnemonic === 'LOAD') {
-      args.push(`${imm}`);
-    } else {
-      args.push(`${imm}`);
-    }
-  }
+    case 'MOV':
+    case 'ADD':
+    case 'SUB':
+    case 'AND':
+    case 'OR':
+    case 'XOR':
+    case 'CMP':
+    case 'MUL':
+    case 'DIV':
+    case 'MOD':
+    case 'ROL':
+    case 'ROR':
+    case 'SWAP':
+    case 'LDR':
+    case 'STR':
+      return `${mnemonic} R${dst}, R${src}`;
 
-  return `${mnemonic} ${args.join(', ')}`;
+    case 'NOT':
+      return `${mnemonic} R${dst}`;
+
+    case 'SHL':
+    case 'SHR':
+      return `${mnemonic} R${dst}, ${imm}`;
+
+    case 'LOAD':
+      return `${mnemonic} R${dst}, ${imm}`;
+
+    case 'PUSH':
+      return `${mnemonic} R${src}`;
+
+    case 'POP':
+      return `${mnemonic} R${dst}`;
+
+    default:
+      return `${mnemonic} ???`;
+  }
 }
 
 export function disassembleToParts(machineCode: number) {
@@ -277,7 +324,6 @@ export function disassembleToParts(machineCode: number) {
   const imm = machineCode & 0x3FFFF;
   const address = machineCode & 0x3FFFFFF;
 
-  // Sign extend immediate
   const signExtendedImm = (imm & 0x20000) ? (imm | 0xFFFC0000) : imm;
 
   return {
@@ -291,7 +337,6 @@ export function disassembleToParts(machineCode: number) {
   };
 }
 
-// Example programs
 export const EXAMPLE_PROGRAMS = {
   simpleAdd: `; Simple addition example
 LOAD R0, 10      ; R0 = 10
@@ -326,11 +371,13 @@ fib_loop:
 CMP R0, 0        ; if count == 0
 JZ done
 STR R6, R1       ; store a
-ADD R6, 4        ; addr += 4
+LOAD R3, 4       ; increment by 4
+ADD R6, R3       ; addr += 4
 MOV R3, R2       ; temp = b
 ADD R2, R1       ; b = b + a
 MOV R1, R3       ; a = temp
-SUB R0, 1        ; count--
+LOAD R3, 1       ; decrement by 1
+SUB R0, R3       ; count--
 JMP fib_loop
 done:
 HALT`,
@@ -349,7 +396,8 @@ MUL R4, R2       ; offset = counter * page_size
 ADD R4, R0       ; address = base + offset
 LOAD R5, 0xAA    ; value to store
 STR R4, R5       ; store to different page
-ADD R3, 1
+LOAD R5, 1
+ADD R3, R5
 JMP thrash_loop
 done:
 HALT`,
@@ -370,12 +418,14 @@ RET
 fib_recurse:
 ; Save R0 (n)
 PUSH R0
-SUB R0, 1
+LOAD R1, 1
+SUB R0, R1
 CALL fib         ; fib(n-1)
 MOV R1, R0       ; R1 = result
 POP R0           ; restore n
 PUSH R1          ; save fib(n-1)
-SUB R0, 2
+LOAD R1, 2
+SUB R0, R1
 CALL fib         ; fib(n-2)
 POP R1           ; R1 = fib(n-1)
 ADD R0, R1       ; R0 = fib(n-1) + fib(n-2)

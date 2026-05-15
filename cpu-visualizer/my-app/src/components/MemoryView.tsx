@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useCPUStore } from '@/lib/store';
 import {
   PAGE_SIZE,
@@ -15,7 +15,6 @@ import {
   FRAME_COUNT,
 } from '@/types/cpu';
 
-// Compact segment colors
 const SEGMENT_COLORS: Record<string, string> = {
   code: 'bg-emerald-600',
   stack: 'bg-amber-500',
@@ -31,6 +30,15 @@ function getSegmentType(vaddr: number, isMapped: boolean): string {
   return 'heap';
 }
 
+function readPhysMem32(physMem: Uint8Array, addr: number): number {
+  return (
+    physMem[addr] |
+    (physMem[addr + 1] << 8) |
+    (physMem[addr + 2] << 16) |
+    (physMem[addr + 3] << 24)
+  );
+}
+
 export default function MemoryView() {
   const { cpu, mmu, highlightedMemoryVAddr, highlightedMemoryPAddr, setHighlightedMemory, setShowPageWalk, setCurrentPageWalkSteps } = useCPUStore();
   const cpuState = cpu.getState();
@@ -41,19 +49,16 @@ export default function MemoryView() {
   const [selectedPage, setSelectedPage] = useState(0);
   const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
 
-  // ---- Virtual memory map - compact grid of 32 pages ----
-  const virtualPages = useMemo(() => {
+  const getVirtualPages = useCallback(() => {
     const pages: { vaddr: number; paddr: number | null; flags: number; isMapped: boolean }[] = [];
+    const physMem = mmuState.physMem;
+    const cr3 = mmuState.cr3;
     for (let i = 0; i < 32; i++) {
       const vaddr = i * PAGE_SIZE;
       const pdIdx = extractPDIndex(vaddr);
       const ptIdx = extractPTIndex(vaddr);
-      const pdeAddr = mmuState.cr3 + pdIdx * 4;
-      const pde =
-        (mmuState.physMem[pdeAddr]) |
-        (mmuState.physMem[pdeAddr + 1] << 8) |
-        (mmuState.physMem[pdeAddr + 2] << 16) |
-        (mmuState.physMem[pdeAddr + 3] << 24);
+      const pdeAddr = cr3 + pdIdx * 4;
+      const pde = readPhysMem32(physMem, pdeAddr);
 
       let paddr: number | null = null;
       let flags = 0;
@@ -62,11 +67,7 @@ export default function MemoryView() {
       if (pde & PTE_PRESENT) {
         const ptBase = pde & PAGE_MASK;
         const pteAddr = ptBase + ptIdx * 4;
-        const pte =
-          (mmuState.physMem[pteAddr]) |
-          (mmuState.physMem[pteAddr + 1] << 8) |
-          (mmuState.physMem[pteAddr + 2] << 16) |
-          (mmuState.physMem[pteAddr + 3] << 24);
+        const pte = readPhysMem32(physMem, pteAddr);
 
         if (pte & PTE_PRESENT) {
           paddr = pte & PAGE_MASK;
@@ -79,8 +80,7 @@ export default function MemoryView() {
     return pages;
   }, [mmuState.physMem, mmuState.cr3]);
 
-  // ---- Physical frame map ----
-  const physicalFrames = useMemo(() => {
+  const getPhysicalFrames = useCallback(() => {
     const frames: { frameNum: number; isAllocated: boolean }[] = [];
     const frameBitmap = mmuState.frameBitmap;
     for (let i = 0; i < 32; i++) {
@@ -90,6 +90,9 @@ export default function MemoryView() {
     }
     return frames;
   }, [mmuState.frameBitmap]);
+
+  const virtualPages = getVirtualPages();
+  const physicalFrames = getPhysicalFrames();
 
   const handleSearch = () => {
     const addr = parseInt(searchAddress, 16) || parseInt(searchAddress, 10) || 0;
@@ -116,10 +119,8 @@ export default function MemoryView() {
     setHighlightedMemory(null, frame.frameNum * PAGE_SIZE);
   };
 
-  // ---- Render: Virtual View ----
   const renderVirtualView = () => (
     <div className="space-y-3">
-      {/* Color legend */}
       <div className="flex items-center gap-3 text-[10px] text-gray-500">
         {['Code', 'Stack', 'Heap'].map((label) => (
           <span key={label} className="flex items-center gap-1.5">
@@ -138,7 +139,6 @@ export default function MemoryView() {
         </span>
       </div>
 
-      {/* Compact memory map grid */}
       <div className="grid grid-cols-8 sm:grid-cols-8 md:grid-cols-16 gap-1">
         {virtualPages.map((page) => {
           const isHL = highlightedMemoryVAddr !== null &&
@@ -156,14 +156,12 @@ export default function MemoryView() {
         })}
       </div>
 
-      {/* Page labels */}
       <div className="grid grid-cols-8 sm:grid-cols-8 md:grid-cols-16 gap-1 text-[9px] font-mono text-gray-600 text-center">
         {virtualPages.map((page) => (
           <span key={page.vaddr}>{extractVPN(page.vaddr)}</span>
         ))}
       </div>
 
-      {/* Detail panel for selected page */}
       {selectedPage >= 0 && virtualPages[selectedPage] && (
         <div className="p-3 bg-gray-800/80 rounded border border-gray-700 text-xs space-y-1.5 transition-all">
           <div className="text-cyan-400 font-semibold mb-2">Page VPN {selectedPage}</div>
@@ -199,7 +197,6 @@ export default function MemoryView() {
     </div>
   );
 
-  // ---- Render: Physical View ----
   const renderPhysicalView = () => (
     <div className="space-y-3">
       <div className="flex items-center gap-3 text-[10px] text-gray-500">
@@ -260,7 +257,6 @@ export default function MemoryView() {
     </div>
   );
 
-  // ---- Render: Hex View ----
   const renderHexView = () => {
     const baseAddr = selectedPage * PAGE_SIZE;
     const bytes: { addr: number; value: number }[] = [];
@@ -292,14 +288,12 @@ export default function MemoryView() {
         </div>
 
         <div className="font-mono text-[10px] leading-relaxed">
-          {/* Header */}
           <div className="grid grid-cols-[auto_repeat(16,1fr)] gap-x-1 mb-1">
             <div className="text-gray-600 pr-2">Addr</div>
             {Array.from({ length: 16 }, (_, i) => (
               <div key={i} className="text-center text-gray-600">{i.toString(16).toUpperCase()}</div>
             ))}
           </div>
-          {/* Rows */}
           {Array.from({ length: 4 }, (_, row) => (
             <div key={row} className="grid grid-cols-[auto_repeat(16,1fr)] gap-x-1">
               <div className="text-gray-500 pr-2">
@@ -330,7 +324,6 @@ export default function MemoryView() {
 
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-      {/* Header */}
       <div className="px-3 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
         <h2 className="text-xs font-semibold text-cyan-400">Memory</h2>
         <div className="flex items-center gap-0.5 bg-gray-900 rounded text-xs">
@@ -350,7 +343,6 @@ export default function MemoryView() {
         </div>
       </div>
 
-      {/* Search bar */}
       <div className="px-3 py-2 border-b border-gray-800 flex gap-2">
         <input
           type="text"
@@ -367,14 +359,12 @@ export default function MemoryView() {
         </button>
       </div>
 
-      {/* Content */}
       <div className="p-3">
         {viewMode === 'virtual' && renderVirtualView()}
         {viewMode === 'physical' && renderPhysicalView()}
         {viewMode === 'hex' && renderHexView()}
       </div>
 
-      {/* Footer */}
       <div className="px-3 py-1.5 bg-gray-800/50 border-t border-gray-800 flex items-center gap-3 text-[10px] text-gray-600">
         <span className="text-emerald-400 font-mono">{(PHYS_MEM_SIZE / 1024 / 1024)}MB</span>
         <span>{PAGE_SIZE}B pages</span>

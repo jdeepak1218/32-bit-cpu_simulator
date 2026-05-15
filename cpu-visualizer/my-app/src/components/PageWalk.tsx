@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { useCPUStore } from '@/lib/store';
 import { Pause, Play, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { PageWalkStep } from '@/types/cpu';
@@ -58,12 +57,9 @@ export default function PageWalk() {
 
       <div className="mt-3 grid grid-cols-12 gap-3">
         <div className="col-span-12 md:col-span-8">
-          <motion.div
+          <div
             key={index}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="p-3 bg-gray-800/50 rounded border border-gray-700 min-h-[96px]"
+            className="p-3 bg-gray-800/50 rounded border border-gray-700 min-h-[96px] transition-all duration-200"
           >
             <div className="text-xs font-mono text-gray-300">{step?.description}</div>
             {typeof step?.address !== 'undefined' && (
@@ -72,7 +68,7 @@ export default function PageWalk() {
             {typeof step?.value !== 'undefined' && (
               <div className="text-xs text-gray-500 mt-1 font-mono">Value: 0x{step.value.toString(16).toUpperCase()}</div>
             )}
-          </motion.div>
+          </div>
 
           <div className="mt-2 flex items-center gap-2">
             <button
@@ -97,7 +93,7 @@ export default function PageWalk() {
               {steps.map((s, i) => (
                 <li
                   key={i}
-                  className={`p-1 rounded font-mono ${i === Math.min(index, steps.length - 1) ? 'bg-cyan-900/50 text-cyan-300' : 'text-gray-400'}`}
+                  className={`p-1 rounded font-mono transition-colors ${i === Math.min(index, steps.length - 1) ? 'bg-cyan-900/50 text-cyan-300' : 'text-gray-400'}`}
                 >
                   <div className="truncate">{s.description}</div>
                   {typeof s.address !== 'undefined' && (

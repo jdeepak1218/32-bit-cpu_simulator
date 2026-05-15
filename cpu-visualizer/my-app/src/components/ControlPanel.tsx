@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
 import { useCPUStore } from '@/lib/store';
 import {
   Sliders,
@@ -21,7 +20,6 @@ export default function ControlPanel() {
     instructionCount,
     isRunning,
     isPaused,
-    enablePaging,
     reset,
   } = useCPUStore();
 
@@ -37,28 +35,26 @@ export default function ControlPanel() {
 
   return (
     <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
-      {/* Header */}
       <div className="px-4 py-3 bg-gradient-to-r from-gray-800 to-gray-850 border-b border-gray-700">
         <div className="flex items-center gap-2">
-          <Sliders size={16} className="text-cyan-400 neon-cyan" />
+          <Sliders size={16} className="text-cyan-400" />
           <h2 className="text-sm font-semibold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Control Panel</h2>
         </div>
       </div>
 
       <div className="p-4 space-y-4">
-        {/* CPU Status */}
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-gradient-to-br from-gray-800/60 to-gray-800/30 rounded-lg border border-gray-700/60 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
-              <Cpu size={14} className="text-cyan-400 neon-cyan" />
+              <Cpu size={14} className="text-cyan-400" />
               <span className="text-xs text-gray-500">CPU Status</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                cpuState.halted ? 'bg-red-500 shadow-lg shadow-red-500/40' : isRunning ? 'bg-green-500 shadow-lg shadow-green-500/40' : 'bg-yellow-500 shadow-lg shadow-yellow-500/40'
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                cpuState.halted ? 'bg-red-500' : isRunning ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'
               }`} />
               <span className={`text-sm font-mono font-bold tracking-wide ${
-                cpuState.halted ? 'text-red-400 neon-red' : isRunning ? 'text-green-400 neon-green' : 'text-yellow-400 neon-amber'
+                cpuState.halted ? 'text-red-400' : isRunning ? 'text-green-400' : isPaused ? 'text-yellow-400' : 'text-gray-400'
               }`}>
                 {cpuState.halted ? 'HALTED' : isRunning ? 'RUNNING' : isPaused ? 'PAUSED' : 'READY'}
               </span>
@@ -67,15 +63,15 @@ export default function ControlPanel() {
 
           <div className="p-3 bg-gradient-to-br from-gray-800/60 to-gray-800/30 rounded-lg border border-gray-700/60 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
-              <MemoryStick size={14} className="text-amber-400 neon-amber" />
+              <MemoryStick size={14} className="text-amber-400" />
               <span className="text-xs text-gray-500">Paging</span>
             </div>
             <div className="flex items-center gap-2">
               <div className={`w-2.5 h-2.5 rounded-full ${
-                mmuState.pagingEnabled ? 'bg-green-500 shadow-lg shadow-green-500/40 animate-pulse' : 'bg-gray-600'
+                mmuState.pagingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-600'
               }`} />
               <span className={`text-sm font-mono font-bold tracking-wide ${
-                mmuState.pagingEnabled ? 'text-green-400 neon-green' : 'text-gray-500'
+                mmuState.pagingEnabled ? 'text-green-400' : 'text-gray-500'
               }`}>
                 {mmuState.pagingEnabled ? 'ENABLED' : 'DISABLED'}
               </span>
@@ -83,7 +79,6 @@ export default function ControlPanel() {
           </div>
         </div>
 
-        {/* Execution Speed */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -122,7 +117,6 @@ export default function ControlPanel() {
           </div>
         </div>
 
-        {/* Statistics */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Activity size={14} className="text-green-400" />
@@ -151,10 +145,9 @@ export default function ControlPanel() {
           </div>
         </div>
 
-        {/* Memory Stats */}
         <div className="p-3 bg-gradient-to-br from-purple-900/15 to-purple-800/5 rounded-lg border border-purple-700/30 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
-            <Clock size={14} className="text-purple-400 neon-purple" />
+            <Clock size={14} className="text-purple-400" />
             <span className="text-xs text-gray-500">Memory Access</span>
           </div>
           <div className="flex items-center gap-4 text-xs">

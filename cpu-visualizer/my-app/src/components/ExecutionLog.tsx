@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useCPUStore } from '@/lib/store';
 import type { ExecutionLogEntry } from '@/lib/store';
 import { ScrollText, Trash2, Filter, ChevronDown, ChevronUp, Activity, Search, Download } from 'lucide-react';
@@ -61,7 +60,7 @@ function FlagsDiff({ before, after }: { before: number; after: number }) {
 
 type SortField = 'cycle' | 'pc' | 'instruction';
 type SortDirection = 'asc' | 'desc';
-type FilterType = 'all' | 'memory' | 'fault' | 'register';
+type FilterType = 'all' | 'memory' | 'register';
 
 export default function ExecutionLog() {
   const { executionLog, clearExecutionLog, setHighlightedMemory, setHighlightedRegister } = useCPUStore();
@@ -73,7 +72,6 @@ export default function ExecutionLog() {
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new entries are added
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -84,7 +82,6 @@ export default function ExecutionLog() {
     const log = executionLog;
     let filtered = log;
 
-    // Apply type filter - only run filters if needed
     if (filterType !== 'all' || searchTerm) {
       filtered = log.filter((e) => {
         if (filterType === 'memory' && !e.memoryAccess) return false;
@@ -107,7 +104,6 @@ export default function ExecutionLog() {
       });
     }
 
-    // Only sort if needed (default desc by cycle is already the array order)
     if (sortField !== 'cycle' || sortDirection !== 'desc') {
       filtered = [...filtered].sort((a, b) => {
         let cmp = 0;
@@ -121,16 +117,16 @@ export default function ExecutionLog() {
     return filtered;
   }, [executionLog, filterType, searchTerm, sortField, sortDirection]);
 
-  const toggleSort = (field: SortField) => {
+  const toggleSort = useCallback((field: SortField) => {
     if (sortField === field) {
       setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
       setSortDirection('desc');
     }
-  };
+  }, [sortField]);
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     const csv = [
       'Cycle,PC,Instruction,Machine Code,SP,Flags,Memory Access',
       ...filteredAndSorted.map((e) =>
@@ -156,14 +152,12 @@ export default function ExecutionLog() {
     a.download = 'cpu-execution-log.csv';
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [filteredAndSorted]);
 
-  const renderLogRow = (entry: ExecutionLogEntry, idx: number) => {
+  const renderLogRow = useCallback((entry: ExecutionLogEntry, idx: number) => {
     return (
-      <motion.tr
+      <tr
         key={`${entry.cycle.toString()}-${idx}`}
-        initial={{ opacity: 0, y: -5 }}
-        animate={{ opacity: 1, y: 0 }}
         className="hover:bg-gray-800/50 transition-colors group"
       >
         <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">
@@ -213,7 +207,6 @@ export default function ExecutionLog() {
         <td className="px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => {
-              // Highlight registers that changed
               for (let i = 0; i < 16; i++) {
                 if (entry.registersBefore[i] !== entry.registersAfter[i]) {
                   setHighlightedRegister(i);
@@ -227,13 +220,12 @@ export default function ExecutionLog() {
             <Activity size={10} />
           </button>
         </td>
-      </motion.tr>
+      </tr>
     );
-  };
+  }, [setHighlightedMemory, setHighlightedRegister]);
 
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden flex flex-col">
-      {/* Header */}
       <div className="px-4 py-3 bg-gray-800 border-b border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -273,64 +265,52 @@ export default function ExecutionLog() {
           </div>
         </div>
 
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-700">
-                {/* Search */}
-                <div className="flex-1 relative">
-                  <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search instructions, addresses..."
-                    className="w-full bg-gray-900 border border-gray-700 rounded pl-7 pr-2 py-1 text-xs text-gray-300 focus:border-cyan-500 outline-none"
-                  />
-                </div>
+        {showFilters && (
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-700">
+            <div className="flex-1 relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search instructions, addresses..."
+                className="w-full bg-gray-900 border border-gray-700 rounded pl-7 pr-2 py-1 text-xs text-gray-300 focus:border-cyan-500 outline-none"
+              />
+            </div>
 
-                {/* Type filter */}
-                <div className="flex gap-1">
-                  {([
-                    { value: 'all', label: 'All' },
-                    { value: 'memory', label: 'Memory' },
-                    { value: 'register', label: 'Registers' },
-                  ] as { value: FilterType; label: string }[]).map(({ value, label }) => (
-                    <button
-                      key={value}
-                      onClick={() => setFilterType(value)}
-                      className={`px-2 py-1 rounded text-xs transition-colors ${
-                        filterType === value
-                          ? 'bg-cyan-600 text-white'
-                          : 'bg-gray-800 text-gray-400 hover:text-gray-200'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Auto scroll toggle */}
+            <div className="flex gap-1">
+              {([
+                { value: 'all', label: 'All' },
+                { value: 'memory', label: 'Memory' },
+                { value: 'register', label: 'Registers' },
+              ] as { value: FilterType; label: string }[]).map(({ value, label }) => (
                 <button
-                  onClick={() => setAutoScroll(!autoScroll)}
+                  key={value}
+                  onClick={() => setFilterType(value)}
                   className={`px-2 py-1 rounded text-xs transition-colors ${
-                    autoScroll ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400'
+                    filterType === value
+                      ? 'bg-cyan-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  Auto-scroll
+                  {label}
                 </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setAutoScroll(!autoScroll)}
+              className={`px-2 py-1 rounded text-xs transition-colors ${
+                autoScroll ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400'
+              }`}
+            >
+              Auto-scroll
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Log Table */}        <div
+      <div
         ref={scrollRef}
         className="flex-1 overflow-auto max-h-[400px]"
         onScroll={(e) => {

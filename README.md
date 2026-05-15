@@ -297,32 +297,40 @@ The visualizer is a **Next.js** application with real-time CPU state visualizati
 | Component | What It Shows |
 |:----------|:--------------|
 | **Assembly Editor** | Monaco-based editor with syntax highlighting, breakpoints, example programs, and inline error markers |
-| **Register File** | All 16 GPRs + PC, SP, CR3, and flags (Z, N, V, I) with animated value changes |
+| **Register File** | All 16 GPRs + PC, SP, CR3, and flags (Z, N, V, I) with animated value changes and a Last Result (R0) display |
 | **Memory View** | Virtual address space map (color-coded by segment: code/stack/heap), physical frame bitmap, and hex viewer |
 | **Control Panel** | Run/Pause/Step/Reset controls, execution speed slider, statistics (instructions, cycles, TLB hit rate) |
 | **TLB View** | All 64 TLB entries with validity status, VPN-to-frame mappings, hit rate, and statistics |
 | **Address Translator** | Interactive calculator that breaks down a virtual address into PD index, PT index, offset, and shows the translation result |
-| **Page Walk** | Animated step-by-step page table walk visualization with play/pause and manual stepping |
+| **Page Walk** | Step-by-step page table walk visualization with play/pause and manual stepping |
 | **Execution Log** | Detailed log of every instruction executed with register diffs, memory accesses, TLB hits/misses, support for filtering, searching, sorting, and CSV export |
-| **Page Fault Notification** | Animated popup overlay when a page fault occurs, showing the fault address, MMU status, and page walk steps |
+| **Page Fault Notification** | Popup overlay when a page fault occurs, showing the fault address, MMU status, and page walk steps |
 
 ### Tech Stack
-- **Next.js 15** (App Router)
+- **Next.js 16** (App Router)
 - **React 19** with TypeScript
-- **Zustand** state management with Immer middleware
-- **Framer Motion** for animations
+- **Zustand** state management (optimized without Immer for 64MB MMU state)
 - **Monaco Editor** for the code editor
 - **Tailwind CSS v4** for styling
 - **Lucide React** for icons
 - **Vitest** for testing
 
+### Performance Optimizations
+The visualizer was optimized to handle real-time execution smoothly:
+- **Removed Immer middleware** — Zustand now uses plain immutable updates instead of deep-cloning the 64MB MMU state on every instruction
+- **Stable CPU/MMU instances** — Core emulator objects are created once outside the store, not recreated on every render
+- **CSS transitions over Framer Motion** — Heavy animation library replaced with lightweight CSS transitions for register highlights, notifications, and page walk steps
+- **Optimized MemoryView** — Removed `useMemo` dependency on the 64MB `physMem` array, computes page/frame data on-demand
+- **Batched execution log updates** — Log entries are created with pre-captured state snapshots instead of re-reading from store
+- **Callback memoization** — `useCallback` used throughout to prevent unnecessary re-renders of child components
+
 ### Example Programs Included
 1. **Simple Add** — `R0 = 10 + 20`
 2. **Factorial** — `5! = 120` (used in main.c)
 3. **Memory Test** — Store and load from memory
-4. **Fibonacci** — Generate first 10 Fibonacci numbers
-5. **TLB Thrashing** — Access 64+ pages to demonstrate TLB misses
-6. **Recursive Fibonacci** — Stack-based recursion with `CALL`/`RET`
+4. **Fibonacci** — Generate first 10 Fibonacci numbers (fixed for proper register usage)
+5. **TLB Thrashing** — Access 64+ pages to demonstrate TLB misses (fixed for proper immediate handling)
+6. **Recursive Fibonacci** — Stack-based recursion with `CALL`/`RET` (fixed for proper immediate loading)
 7. **Interrupts** — Divide-by-zero triggers handler
 8. **Page Fault Demo** — Access unmapped memory
 
