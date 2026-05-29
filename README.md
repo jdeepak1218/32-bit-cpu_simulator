@@ -2,6 +2,9 @@
 
 > **Built entirely from scratch to deeply understand how a CPU, memory management unit (MMU), paging, interrupts, and assembly-level execution work under the hood.**
 
+> **Live demo:** [**cpusimulator-chi.vercel.app**](https://cpusimulator-chi.vercel.app)  
+> **Disclaimer:** This visualizer is a simplified educational tool built for learning and visualization purposes. It does **not** depict an exact, cycle-accurate CPU implementation — some timing, pipeline, and hardware-level details are abstracted away. Use it to explore concepts, not to measure real hardware behavior.
+
 This project implements a complete 32-bit CPU emulator in C, including a custom instruction set, assembler, MMU with two-level paging, a TLB, interrupt handling, and an interactive web-based visualizer. Everything — from the instruction encoding to the page table walk — was implemented from the ground up with **no external CPU or hardware emulation libraries**.
 
 ---
